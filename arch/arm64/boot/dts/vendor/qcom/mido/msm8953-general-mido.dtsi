@@ -210,7 +210,7 @@
 			compatible = "focaltech,5435";
 			reg = <0x38>;
 			interrupt-parent = <&tlmm>;
-			interrupts = <65 0x2>;
+			interrupts = <65 0x2008>;
 			vdd-supply = <&pm8953_l10>;
 			vcc_i2c-supply = <&pm8953_l6>;
 			/* pins used by touchscreen */
@@ -244,6 +244,12 @@
 			focal,virtual_key_1 = <172 500 2040>; /* home */
 			focal,virtual_key_2 = <139 200 2040>; /* menu */
 			focal,virtual_key_3 = <158 800 2040>; /* back */
+                        focaltech,have-key;
+                        focaltech,key-number = <3>;
+                        /* Tambahkan ini */
+                        early-statup;
+                        focaltech,irq-gpio-flags = <0x2008>;
+
 		};
 
 		imagis@50 {
