@@ -1,0 +1,32 @@
+name: mido-main_v2
+on:
+  workflow_dispatch:
+
+jobs:
+  fussionbuild:
+    runs-on: ubuntu-22.04   # jangan pakai latest biar stabil
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v4
+
+    - name: Setting up env
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git make bc bison flex ccache \
+          openssl curl zip kmod cpio \
+          libelf-dev libssl-dev wget \
+          device-tree-compiler \
+          ca-certificates python3 \
+          binutils \
+          binutils-aarch64-linux-gnu \
+          binutils-arm-linux-gnueabi
+
+    - name: Building Kernel
+      env:
+        CHATID: ${{ secrets.CHAT_ID }}
+        API_BOT: ${{ secrets.BOT_API }}
+      run: |
+        chmod +x build.sh
+        bash build.sh
