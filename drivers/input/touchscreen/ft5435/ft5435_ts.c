@@ -1464,56 +1464,86 @@ static void ft5435_resume_func(struct work_struct *work)
 #ifdef CONFIG_PM
 static int ft5435_ts_suspend(struct device *dev)
 {
-	struct ft5435_ts_data *data = dev_get_drvdata(dev);
+	struct ft5435_ts_data *data = g_ft5435_ts_data;
+	char i;
 
-	if (!data)
+	u8 state = -1;
+	if (data->loading_fw) {
+		dev_info(dev, "Firmware loading in process...\n");
 		return 0;
-
-	if (data->suspended)
-		return 0;
-
-	if (data->loading_fw)
-		return 0;
-
-	/* disable irq first */
-	disable_irq(data->client->irq);
-
-	/* release all touches cleanly */
-	input_mt_sync_frame(data->input_dev);
-	input_sync(data->input_dev);
-
-	/* enter hibernate mode */
-	ft5x0x_write_reg(data->client, FT_REG_PMODE, FT_PMODE_HIBERNATE);
-
-	data->suspended = true;
-
-	return 0;
-}
-#undef FOCALTECH_TP_GESTURE
-static int ft5435_ts_resume(struct device *dev)
-{
-	struct ft5435_ts_data *data = dev_get_drvdata(dev);
-
-	if (!data)
-		return 0;
-
-	if (!data->suspended)
-		return 0;
-
-	/* hardware reset */
-	if (gpio_is_valid(data->pdata->reset_gpio)) {
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
-		msleep(5);
-		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
-		msleep(50);
 	}
 
-	ft5x0x_write_reg(data->client, FT_REG_PMODE, FT_PMODE_ACTIVE);
+	if (data->suspended) {
+		dev_info(dev, "Already in suspend state\n");
+		return 0;
+	}
 
-	enable_irq(data->client->irq);
+	disable_irq(data->client->irq);
 
-	data->suspended = false;
+	/* release all touches */
+	for (i = 0; i < data->pdata->num_max_touches; i++) {
+		input_mt_slot(data->input_dev, i);
+		input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, 0);
+	}
+	input_mt_report_pointer_emulation(data->input_dev, false);
+	input_sync(data->input_dev);
 
+#undef FOCALTECH_TP_GESTURE
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+		msleep(300);
+	}
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		for (i = 0; i < 10; i++) {
+			ft5x0x_write_reg(data->client, 0xa5, 0x03);
+			ft5x0x_read_reg(data->client, 0xa5, &state);
+
+			if ((state != 0) && (state != 1)) {
+				printk("[FTS]Ft5435 TPDwrite  OK [%d]\n", i);
+				break;
+			} else {
+				printk("[FTS]Ft5435 TPDwrite  Error[%d]\n", i);
+			}
+		}
+	}
+
+	data->suspended = true;
+	return 0;
+}
+
+static int ft5435_ts_resume(struct device *dev)
+{
+	struct ft5435_ts_data *data = g_ft5435_ts_data;
+
+	if (!data->suspended) {
+		dev_dbg(dev, "Already in awake state\n");
+		return 0;
+	}
+
+	/* release all touches */
+	input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, 0);
+	input_sync(data->input_dev);
+
+	/*hw rst*/
+	if (gpio_is_valid(data->pdata->reset_gpio)) {
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 0);
+		msleep(2);
+		gpio_set_value_cansleep(data->pdata->reset_gpio, 1);
+	}
+
+	cancel_delayed_work(&data->resume_work);
+	queue_delayed_work(ft5435_resume_workqueue, &data->resume_work, msecs_to_jiffies(FTS_RESUME_WAIT_TIME));
+
+#if defined(USB_CHARGE_DETECT)
+	queue_work(ft5435_wq, &data->work);
+#endif
+
+#if defined(LEATHER_COVER)
+	queue_work(ft5435_wq_cover, &data->work_cover);
+#endif
+#if defined(VR_GLASS)
+	queue_work(ft5435_wq_vr, &data->work_vr);
+#endif
 	return 0;
 }
 
